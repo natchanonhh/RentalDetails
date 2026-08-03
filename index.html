@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ประกาศค่าหอพัก (Rental Details)</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+
+    <style>
+        :root { 
+            --bbl-blue: #0033A0; 
+            --bbl-orange: #F37021; 
+            --bg-color: #F4F5F7; 
+            --table-head: #0033A0;
+        }
+        
+        * { box-sizing: border-box; font-family: 'Sarabun', sans-serif; margin: 0; padding: 0; }
+        body { background: var(--bg-color); display: flex; justify-content: center; min-height: 100vh; }
+        
+        .app-container { width: 100%; max-width: 1000px; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.1); position: relative; display: flex; flex-direction: column; min-height: 100vh; }
+        
+        /* ป้ายโฆษณา (เต็มแผ่น ไม่มีช่องว่างด้านข้าง) */
+        .banner-container { width: 100%; display: block; overflow: hidden; position: relative; background: #eee; border-bottom: 3px solid var(--bbl-orange); }
+        .banner-slider { display: flex; width: 100%; transition: transform 0.5s ease-in-out; }
+        .banner-slide { min-width: 100%; flex-shrink: 0; display: flex; justify-content: center; align-items: center; background: #fff;}
+        .banner-slide img { width: 100%; height: auto; max-height: 400px; object-fit: cover; display: block; cursor: pointer; }
+        
+        .screen { display: none; padding: 30px 20px; flex-direction: column; flex-grow: 1; align-items: center;}
+        .active { display: flex; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Login Card */
+        .login-card { background: white; border: 1px solid #eee; padding: 40px; border-radius: 16px; margin-top: 20px; text-align: center; width: 100%; max-width: 500px; box-shadow: 0 5px 20px rgba(0,0,0,0.05);}
+        .login-card h2 { color: #333; font-weight: 700; margin-top: 0; font-size: 1.8rem; margin-bottom: 5px;}
+        .login-subtitle { color: #666; font-size: 1rem; margin-bottom: 25px; }
+
+        input, select { width: 100%; padding: 15px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 8px; font-size: 1.1rem; text-align: center; }
+        input:focus, select:focus { border-color: var(--bbl-blue); outline: none; box-shadow: 0 0 0 3px rgba(0,51,160,0.1);}
+        
+        .btn-primary { width: 100%; padding: 15px; background: #0066cc; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 1.2rem; }
+        .btn-primary:hover { background: #0052a3; }
+
+        /* Table */
+        .data-header { width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        .table-responsive { overflow-x: auto; margin-top: 10px; width: 100%; }
+        table { width: 100%; min-width: 1000px; border-collapse: collapse; border: 1px solid #ddd; font-size: 0.95rem; background: white; }
+        th, td { border: 1px solid #eee; padding: 12px 8px; text-align: center; vertical-align: middle; }
+        th { background: var(--table-head); font-weight: 600; color: white; font-size: 1rem;}
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #f1f5f9; }
+
+        /* ปุ่มในตาราง */
+        .btn-slip { padding: 8px 12px; background: var(--table-head); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem;}
+        .btn-detail { padding: 8px 15px; background: var(--bbl-orange); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem;}
+
+        /* Modal Details */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; padding: 20px;}
+        .modal-content { background: white; padding: 30px; border-radius: 16px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 10px 40px rgba(0,0,0,0.2);}
+        .details-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dashed #ddd; font-size: 1.05rem; }
+        .details-label { font-weight: bold; color: var(--bbl-blue); }
+        .details-val { color: #333; text-align: right; font-weight: 600; }
+        .slip-preview { width: 100%; max-width: 350px; height: auto; border-radius: 12px; margin: 20px auto; display: block; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        
+        <!-- แบนเนอร์โฆษณา ดึงจากแอดมิน แสดงเต็มแผ่น -->
+        <div class="banner-container">
+            <div class="banner-slider" id="banner-slider"></div>
+        </div>
+
+        <!-- หน้า 1: ล็อกอิน -->
+        <div id="login-scr" class="screen active">
+            <div class="login-card">
+                <h2>Rental Details</h2>
+                <p class="login-subtitle">กรุณาระบุตัวตนเพื่อตรวจสอบสิทธิ์การเข้าถึง (Smart Login)</p>
+                
+                <input type="text" id="shareCodeInput" placeholder="ระบุชื่อ หรือรหัสประจำตัว..." autocomplete="off">
+                <button class="btn-primary" onclick="verifyShareCode()">เข้าสู่ระบบ</button>
+                <p id="errorMsg" style="color: #D32F2F; margin-top: 15px; font-weight: bold; display: none;">ไม่พบข้อมูลรหัสแชร์นี้ในระบบ!</p>
+            </div>
+            
+            <p id="time-display" style="color:#888; font-size: 0.9rem; margin-top: 20px; text-align: center;"></p>
+        </div>
+
+        <!-- หน้า 2: ตารางข้อมูล 1 บรรทัดต่อ 1 เดือน -->
+        <div id="data-scr" class="screen" style="width: 100%;">
+            <div class="data-header">
+                <div>
+                    <h2 style="color: var(--bbl-blue); margin: 0; font-size: 1.6rem;">ระบบประกาศค่าหอพัก</h2>
+                    <p style="color: #666; margin: 5px 0 0 0; font-size: 1rem; font-weight: bold;" id="displayUserInfo">ผู้ใช้: Loading...</p>
+                </div>
+                <button onclick="logout()" style="padding: 10px 20px; background: #D32F2F; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem;">ออกจากระบบ</button>
+            </div>
+
+            <div style="background: #fafafa; padding: 15px 20px; border-radius: 8px; border: 1px solid #ddd; display: flex; align-items: center; gap: 15px; margin-bottom: 20px; width: 100%;">
+                <span style="font-weight: 600; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">📅 เลือกปี พ.ศ. :</span>
+                <select id="filter-year" onchange="loadDormData()" style="width: auto; min-width: 150px; margin: 0; padding: 10px;"></select>
+            </div>
+
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="min-width: 90px;">วัน เดือน ปี</th>
+                            <th style="min-width: 140px;">รายการ</th>
+                            <th style="min-width: 80px;">ค่าหอพัก</th>
+                            <th style="min-width: 80px;">ค่าน้ำ</th>
+                            <th style="min-width: 80px;">ค่าไฟ</th>
+                            <th style="min-width: 100px;">ยอดรวม</th>
+                            <th style="min-width: 150px;">บาร์โค้ด</th>
+                            <th style="min-width: 70px;">สลิป</th>
+                            <th style="min-width: 120px;">ผู้รับเงิน</th>
+                            <th style="min-width: 130px;">ธนาคารที่รับเงิน</th>
+                            <th style="min-width: 120px;">รายละเอียด</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dorm-history-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal ดูรายละเอียดแบบเจาะลึก (ตามสั่ง) -->
+    <div id="details-modal" class="modal-overlay" onclick="closeDetails()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h2 style="text-align: center; color: var(--bbl-blue); margin-top:0; border-bottom: 3px solid var(--bbl-orange); padding-bottom: 15px; margin-bottom: 20px;">รายละเอียดใบแจ้งหนี้</h2>
+            
+            <div class="details-row"><span class="details-label">วันที่ชำระเงิน:</span><span class="details-val" id="det-date">-</span></div>
+            <div class="details-row"><span class="details-label">รายการ:</span><span class="details-val" id="det-title">-</span></div>
+            <div class="details-row"><span class="details-label">ค่าหอพัก (บาท):</span><span class="details-val" id="det-room">-</span></div>
+            <div class="details-row"><span class="details-label">ค่าน้ำ (บาท):</span><span class="details-val" id="det-water">-</span></div>
+            <div class="details-row"><span class="details-label">ค่าไฟ (บาท):</span><span class="details-val" id="det-electric">-</span></div>
+            <div class="details-row"><span class="details-label">ยอดรวมสุทธิ:</span><span class="details-val" id="det-total" style="color:var(--bbl-orange); font-size:1.3rem;">-</span></div>
+            <div class="details-row"><span class="details-label">ผู้รับเงิน:</span><span class="details-val" id="det-payee">-</span></div>
+            <div class="details-row"><span class="details-label">ธนาคาร:</span><span class="details-val" id="det-bank">-</span></div>
+            
+            <div style="text-align: center; margin-top: 25px; margin-bottom: 15px;">
+                <span class="details-label" style="display:block; margin-bottom:10px; font-size: 1.1rem;">บาร์โค้ดอ้างอิง:</span>
+                <svg id="det-barcode-svg" style="width: 100%; height: 60px;"></svg>
+            </div>
+
+            <div class="details-row" style="border:none;"><span class="details-label">หมายเหตุระบบ:</span><span class="details-val" id="det-note" style="color:#666; font-weight:normal;">-</span></div>
+            
+            <img id="det-slip" class="slip-preview" src="" style="display: none; margin-top: 20px;">
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <button onclick="closeDetails()" style="padding:15px 30px; border-radius:12px; border:none; background:var(--bbl-blue); color:white; font-weight:bold; cursor:pointer; width:100%; font-size: 1.1rem;">ปิดหน้าต่างรายละเอียด</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal เฉพาะกดดูรูปจากตาราง -->
+    <div id="image-modal" class="modal-overlay" onclick="closeImage()">
+        <img id="viewer-img" src="" class="slip-preview" onclick="event.stopPropagation()" style="max-width: 90%; max-height: 80vh;">
+        <button onclick="closeImage()" style="margin-top:20px; padding:12px 30px; border-radius:12px; border:none; background:#fff; color:#333; font-weight:bold; cursor:pointer; font-size: 1.1rem;">ปิดรูปภาพ</button>
+    </div>
+
+    <script>
+        const SB_URL = 'https://nnxraimetlwvsekburkm.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ueHJhaW1ldGx3dnNla2J1cmttIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5ODEyMjgsImV4cCI6MjEwMDU1NzIyOH0.6fGLFjKsKO94EVf3B_es1P-ImXnkcreC3zRKxiaDEiM';
+        const sb = supabase.createClient(SB_URL, SB_KEY);
+
+        let targetUsername = "";
+        let currentSlide = 0;
+        const thaiMonthsShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+        window.onload = () => {
+            fetchBanners();
+            setupYearDropdown();
+            updateRealtimeClock();
+            setInterval(updateRealtimeClock, 1000);
+        };
+
+        function updateRealtimeClock() {
+            const now = new Date();
+            const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+            const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+            
+            const dayName = days[now.getDay()];
+            const d = now.getDate();
+            const m = months[now.getMonth()];
+            const y = now.getFullYear() + 543;
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            
+            document.getElementById('time-display').innerText = `ข้อมูล ณ วัน${dayName} ที่ ${d} เดือน${m} พ.ศ.${y} เวลา ${h}:${min} น.`;
+        }
+
+        async function fetchBanners() {
+            try {
+                const { data } = await sb.from('banners').select('*').order('sort_order', {ascending: true});
+                const slider = document.getElementById('banner-slider');
+                
+                if(!data || data.length === 0) {
+                    slider.innerHTML = `<div class="banner-slide"><div style="width:100%; height:200px; display:flex; align-items:center; justify-content:center; color:#888;">พื้นที่โฆษณา</div></div>`;
+                    return;
+                }
+
+                let html = '';
+                data.forEach(b => {
+                    let onClickAttr = b.target_url ? `onclick="window.open('${b.target_url}', '_blank')"` : '';
+                    html += `<div class="banner-slide"><img src="${b.image_url}" ${onClickAttr}></div>`;
+                });
+                slider.innerHTML = html;
+
+                if(data.length > 1) {
+                    setInterval(() => {
+                        currentSlide = (currentSlide + 1) % data.length;
+                        slider.style.transform = `translateX(-${currentSlide * 100}%)`;
+                    }, 4000);
+                }
+            } catch(e) { console.error("Banner Load Error", e); }
+        }
+
+        function setupYearDropdown() {
+            const ySelect = document.getElementById('filter-year');
+            const curYear = new Date().getFullYear();
+            let yHtml = '';
+            for(let i = curYear + 1; i >= curYear - 4; i--) {
+                let selected = (i === curYear) ? 'selected' : '';
+                yHtml += `<option value="${i}" ${selected}>${i + 543}</option>`;
+            }
+            ySelect.innerHTML = yHtml;
+        }
+
+        // ระบบล็อกอินรหัสแชร์ (เข้าได้ทุกคนที่มีรหัสตรง)
+        async function verifyShareCode() {
+            const code = document.getElementById('shareCodeInput').value.trim();
+            const err = document.getElementById('errorMsg');
+            if(!code) { err.innerText = "กรุณาระบุชื่อ หรือรหัสประจำตัว"; err.style.display = 'block'; return; }
+
+            document.querySelector('.btn-primary').innerText = "กำลังตรวจสอบ...";
+            err.style.display = 'none';
+
+            try {
+                const { data } = await sb.from('users').select('username, nickname').eq('share_code', code);
+                if(data && data.length > 0) {
+                    targetUsername = data[0].username;
+                    const dispName = data[0].nickname ? `${data[0].nickname} (รหัส: ${targetUsername})` : targetUsername;
+                    document.getElementById('displayUserInfo').innerText = `👤 ${dispName}`;
+                    
+                    document.getElementById('login-scr').classList.remove('active');
+                    document.getElementById('data-scr').classList.add('active');
+                    loadDormData();
+                } else {
+                    err.innerText = "ไม่พบรหัสประจำตัวนี้ในระบบ หรือผู้ใช้อาจยังไม่ได้ตั้งค่าแชร์";
+                    err.style.display = 'block';
+                }
+            } catch(e) {
+                err.innerText = "เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล";
+                err.style.display = 'block';
+            }
+            document.querySelector('.btn-primary').innerText = "เข้าสู่ระบบ";
+        }
+
+        function logout() {
+            targetUsername = "";
+            document.getElementById('shareCodeInput').value = "";
+            document.getElementById('data-scr').classList.remove('active');
+            document.getElementById('login-scr').classList.add('active');
+        }
+
+        function viewImage(src) {
+            document.getElementById('viewer-img').src = src;
+            document.getElementById('image-modal').style.display = 'flex';
+        }
+        function closeImage() { document.getElementById('image-modal').style.display = 'none'; }
+
+        // โหลดข้อมูลตาราง (1 เดือน = 1 บรรทัด แสดงครบทุกช่อง)
+        async function loadDormData() {
+            if(!targetUsername) return;
+            const tbody = document.getElementById('dorm-history-table');
+            tbody.innerHTML = `<tr><td colspan="11" style="padding: 30px; font-size: 1.1rem;">กำลังโหลดข้อมูล...</td></tr>`;
+
+            const selYear = document.getElementById('filter-year').value;
+            let filterYear = parseInt(selYear);
+            if (filterYear > 2500) filterYear -= 543;
+
+            try {
+                const { data } = await sb.from('transactions').select('*').eq('username', targetUsername).eq('type', 'dormitory').order('date', {ascending: false}).order('id', {ascending: false});
+                
+                let filteredData = [];
+                if(data) {
+                    data.forEach(item => {
+                        if(!item.date) return;
+                        const dParts = item.date.split('-');
+                        let itemYear = parseInt(dParts[0]);
+                        if (itemYear > 2500) itemYear -= 543;
+                        if (itemYear === filterYear) filteredData.push(item);
+                    });
+                }
+
+                if(filteredData.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="11" style="padding:40px; color:#888; font-weight:bold; font-size:1.1rem;">ไม่มีประวัติการชำระค่าหอพักในปี พ.ศ. ${(filterYear + 543)}</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = filteredData.map(i => {
+                    const dParts = (i.date || "").split('-');
+                    const monthIndex = parseInt(dParts[1]) ? parseInt(dParts[1]) - 1 : 0;
+                    let displayYear = parseInt(dParts[0]) || 0;
+                    if (displayYear < 2500) displayYear += 543;
+
+                    // รูปแบบวันที่แบ่งบรรทัดตามรูปเป๊ะๆ 05 <br> ม.ค. <br> 2569
+                    const thDate = `<div style="line-height:1.4; font-weight:bold;">${dParts[2] || '-'}<br>${thaiMonthsShort[monthIndex] || '-'}<br>${displayYear}</div>`;
+                    const totalAmt = `<span style="color:var(--bbl-orange); font-weight:bold; font-size: 1.05rem;">${parseFloat(i.amount).toLocaleString('th-TH',{minimumFractionDigits:2})}<br>฿</span>`;
+                    
+                    const slipHtml = i.slip_image ? `<button class="btn-slip" onclick="viewImage('${i.slip_image}')">ดู<br>รูป</button>` : '-';
+                    const safeData = encodeURIComponent(JSON.stringify(i));
+
+                    return `<tr>
+                        <td>${thDate}</td>
+                        <td style="font-weight:600;">${i.title || 'รอบเดือน...'}</td>
+                        <td>${i.room_rate || '0'}</td>
+                        <td>${i.water_bill || '0'}</td>
+                        <td>${i.electric_bill || '0'}</td>
+                        <td>${totalAmt}</td>
+                        <td style="padding: 10px;">
+                            <svg class="barcode-svg" id="tb-barcode-${i.id}" style="width:100%; height:40px;"></svg>
+                        </td>
+                        <td>${slipHtml}</td>
+                        <td style="color:#0033A0; font-weight:600;">${i.payee_name || '-'}</td>
+                        <td style="color:#0033A0; font-weight:600;">${i.payee_bank || '-'}</td>
+                        <td>
+                            <button class="btn-detail" onclick="showDetails('${safeData}')">รายละเอียด</button>
+                        </td>
+                    </tr>`;
+                }).join('');
+
+                // วาดบาร์โค้ดลงตาราง
+                filteredData.forEach(i => {
+                    let bVal = i.barcode || i.id.toString();
+                    try { JsBarcode("#tb-barcode-" + i.id, bVal, { width: 1.5, height: 35, displayValue: false, margin: 0 }); } catch(e) {}
+                });
+
+            } catch(err) {
+                tbody.innerHTML = `<tr><td colspan="11" style="color:red; padding:20px;">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        // แสดงรายละเอียดแบบเจาะลึก
+        window.showDetails = function(encodedData) {
+            const i = JSON.parse(decodeURIComponent(encodedData));
+            
+            const dParts = (i.date || "").split('-');
+            const monthIndex = parseInt(dParts[1]) ? parseInt(dParts[1]) - 1 : 0;
+            let displayYear = parseInt(dParts[0]) || 0;
+            if (displayYear < 2500) displayYear += 543;
+            const thDate = `${dParts[2] || '-'} ${thaiMonthsShort[monthIndex] || '-'} ${displayYear}`;
+
+            document.getElementById('det-date').innerText = thDate;
+            document.getElementById('det-title').innerText = i.title || 'รอบเดือน...';
+            document.getElementById('det-room').innerText = parseFloat(i.room_rate || 0).toLocaleString('th-TH');
+            document.getElementById('det-water').innerText = parseFloat(i.water_bill || 0).toLocaleString('th-TH');
+            document.getElementById('det-electric').innerText = parseFloat(i.electric_bill || 0).toLocaleString('th-TH');
+            document.getElementById('det-total').innerText = parseFloat(i.amount).toLocaleString('th-TH',{minimumFractionDigits:2}) + ' ฿';
+            document.getElementById('det-payee').innerText = i.payee_name || '-';
+            document.getElementById('det-bank').innerText = i.payee_bank || '-';
+            document.getElementById('det-note').innerText = i.slip_text || '-';
+
+            // วาดบาร์โค้ดใน Modal
+            try {
+                let bVal = i.barcode || i.id.toString();
+                JsBarcode("#det-barcode-svg", bVal, { width: 2, height: 50, displayValue: true, fontSize: 16 });
+            } catch(err) {}
+
+            const slipImg = document.getElementById('det-slip');
+            if (i.slip_image) {
+                slipImg.src = i.slip_image;
+                slipImg.style.display = 'block';
+            } else {
+                slipImg.style.display = 'none';
+            }
+
+            document.getElementById('details-modal').style.display = 'flex';
+        }
+
+        window.closeDetails = function() {
+            document.getElementById('details-modal').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
